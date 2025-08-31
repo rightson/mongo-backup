@@ -22,8 +22,8 @@ program
     .option('--authentication-database <db>', 'Authentication database')
     .option('-d, --database <name>', 'Database name', 'test')
     .option('-c, --collection <name>', 'Collection name')
-    .option('-f, --date-field <field>', 'Date field for splitting', 'createdAt')
-    .option('-o, --output-dir <dir>', 'Output directory', './dump-extra')
+    .requiredOption('-f, --date-field <field>', 'Date field for splitting (required)')
+    .option('-o, --output-dir <dir>', 'Output directory', './dump-backup')
     .option('-b, --batch-size <size>', 'Batch size for querying (capped at 10K for 10M+ documents)', '50000')
     .option('-z, --compress', 'Compress output files with gzip (default: true)')
     .option('--no-compress', 'Disable compression')
@@ -84,7 +84,7 @@ program
     .description('Delete already-backed-up months after validation')
     .option('-d, --database <name>', 'Database name', 'test')
     .option('-c, --collection <name>', 'Collection name')
-    .option('-o, --output-dir <dir>', 'Output directory containing backup files', './dump-extra')
+    .option('-o, --output-dir <dir>', 'Output directory containing backup files', './dump-backup')
     .option('-m, --months <months>', 'Specific months to delete (comma-separated, e.g., "2023-01,2023-02")')
     .option('--dry-run', 'Show what would be deleted without actually deleting')
     .option('--no-confirm', 'Skip confirmation prompt (use with caution)')
@@ -138,7 +138,7 @@ program
 // Restore command
 program
     .command('restore')
-    .description('Restore MongoDB collection from monthly dump files')
+    .description('Restore MongoDB collection from monthly dump chunks')
     .option('-u, --uri <uri>', 'MongoDB connection URI', 'mongodb://localhost:27017')
     .option('-h, --host <host>', 'MongoDB host', 'localhost')
     .option('-p, --port <port>', 'MongoDB port', '27017')
@@ -147,8 +147,8 @@ program
     .option('--authentication-database <db>', 'Authentication database')
     .option('-d, --database <name>', 'Database name', 'test')
     .option('-c, --collection <name>', 'Collection name')
-    .option('-i, --input-dir <dir>', 'Input directory containing dump files', './dump-extra')
-    .option('-b, --batch-size <size>', 'Batch size for inserting', '25000')
+    .option('-i, --input-dir <dir>', 'Input directory containing dump chunks', './dump-backup')
+    .option('-m, --months <months>', 'Specific months to restore (comma-separated, e.g., "2024-01,2024-03")')
     .option('--drop', 'Drop collection before restore')
     .option('--skip-index-restoration', 'Skip automatic index restoration (default: false)')
     .action(async (options) => {
@@ -157,10 +157,12 @@ program
             process.exit(1);
         }
 
+        // Parse months if provided
+        const months = options.months ? options.months.split(',').map(m => m.trim()) : null;
+
         // Parse numeric options
         const parsedOptions = {
             ...options,
-            batchSize: parseInt(options.batchSize),
             port: parseInt(options.port),
             skipIndexRestoration: options.skipIndexRestoration || false
         };
@@ -168,8 +170,13 @@ program
         const restorer = new MongoRestorer(parsedOptions);
 
         try {
-            await restorer.run();
-            console.log('\n✓ Restore completed!');
+            if (months) {
+                await restorer.restoreSpecificChunks(months);
+                console.log(`\n✓ Selective restore completed for months: ${months.join(', ')}!`);
+            } else {
+                await restorer.run();
+                console.log('\n✓ Restore completed!');
+            }
             process.exit(0);
         } catch (error) {
             console.error('\n✗ Restore failed:', error.message);

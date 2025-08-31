@@ -11,23 +11,25 @@ mongo-backup is a Node.js CLI tool for MongoDB collection dumping with automatic
 ### Core Components
 
 **MongoDumper Class** (`lib/mongo-dumper.js`):
-- Main business logic class handling all MongoDB operations
+- Simplified business logic class using native MongoDB tools
 - **Connection Management**: `buildConnectionUri()`, `connect()`, `disconnect()` - handles multiple connection methods (URI vs individual params), secure password prompting
 - **Index Management**: `checkIndexExists()` - read-only index verification and warnings for optimal performance
-- **Index Preservation**: `extractIndexes()`, `saveIndexes()` - automatic extraction and storage of all collection indexes (NEW in 1.1.0)
+- **Index Preservation**: `extractIndexes()`, `saveIndexes()` - automatic extraction and storage of all collection indexes
 - **Date Analysis**: `getDateRange()`, `generateMonthlyRanges()` - analyzes collection date spans and creates monthly time ranges
 - **State Management**: `loadState()`, `saveState()` - persistent resume functionality via `.dump-state.json`
-- **Memory-Agnostic Streaming**: `dumpMonth()` - true streaming with manual cursor iteration, no buffering
-- **Backup Cleanup**: `cleanBackedUpData()`, `validateBackupFile()`, `findBackupFiles()` - safe deletion of completed backups with validation (NEW in 1.3.0)
+- **Command Execution**: `executeCommand()` - handles mongodump process execution with real-time progress
+- **Monthly Chunking**: `dumpMonth()` - uses mongodump with date queries for each month
+- **Backup Cleanup**: `cleanBackedUpData()`, `validateBackupFile()`, `findBackupFiles()` - safe deletion of completed backups with validation
 - **Orchestration**: `run()` - main method coordinating the entire dump process
 
 **MongoRestorer Class** (`lib/mongo-restorer.js`):
-- Complementary class handling collection restoration operations  
+- Simplified class handling chunk-based restoration using mongorestore  
 - **Connection Management**: Same secure connection handling as MongoDumper
-- **Index Restoration**: `loadIndexes()`, `restoreIndexes()` - automatic restoration of all saved indexes (NEW in 1.1.0)
-- **File Processing**: `findDumpFiles()`, `restoreFile()` - automated discovery and restoration of dump files
+- **Index Restoration**: `loadIndexes()`, `restoreIndexes()` - automatic restoration of all saved indexes
+- **Chunk Discovery**: `findDumpChunks()` - automated discovery of monthly dump chunk directories
+- **Command Execution**: `executeCommand()` - handles mongorestore process execution with real-time progress
 - **State Management**: `loadState()`, `saveState()` - persistent resume functionality via `.restore-state.json`
-- **Batch Restoration**: Optimized batch processing for different document sizes
+- **Selective Restore**: `restoreSpecificChunks()` - restore specific months or all chunks
 - **Orchestration**: `run()` - main method coordinating the entire restore process
 
 **CLI Interface** (`bin/cli.js`):
@@ -35,10 +37,12 @@ mongo-backup is a Node.js CLI tool for MongoDB collection dumping with automatic
 - Thin wrapper around MongoDumper and MongoRestorer classes
 - Handles CLI-specific concerns (exit codes, error formatting)
 - **Full Connection Support**: Supports both `--uri` and individual connection options (`-h`, `-p`, `--host`, `--username`, etc.)
-- **Index Preservation Options**: `--skip-index-extraction`, `--skip-index-restoration` for manual index control (NEW in 1.1.0)
-- **Backup Cleanup**: `clean` command for safely deleting already-backed-up months with validation (NEW in 1.3.0)
+- **Required Date Field**: `--date-field` is now required (no default) for explicit date filtering
+- **Index Preservation Options**: `--skip-index-extraction`, `--skip-index-restoration` for manual index control
+- **Backup Cleanup**: `clean` command for safely deleting already-backed-up months with validation
+- **Selective Restore**: `--months` option for restoring specific monthly chunks
 - **Non-Intrusive Design**: Tool only reads data and never modifies collections, indexes, or schema
-- **Optimized Defaults**: Large collection optimized batch sizes and compression enabled by default
+- **Native Tool Integration**: Leverages mongodump/mongorestore for optimal performance
 
 **Module Export** (`index.js`):
 - Exports both MongoDumper and MongoRestorer classes for programmatic usage
@@ -109,31 +113,31 @@ The `buildConnectionUri()` method handles both approaches and includes secure pa
    - Atomic file operations (cleanup on failure)
 
 ### File Output Structure
-- **Data Files**: `{database}_{collection}_{YYYY-MM}.{format}{.gz}` (JSONL format for memory efficiency)
-- **Index File**: `{database}_{collection}_indexes.json` (NEW in 1.1.0 - contains all index definitions)
-- **Default Output Directory**: `./dump-extra/`
-- Supports JSONL (default) and BSON formats
-- **JSONL Format**: One JSON object per line - memory efficient, streaming-friendly, interruption-safe
-- **Default gzip compression** for space efficiency (70-90% size reduction)
-- **MongoRestorer** automatically handles both compressed files and index restoration
+- **Chunk Directories**: `./dump-backup/YYYY-MM/` (monthly chunk directories)
+- **Native BSON Files**: `./dump-backup/YYYY-MM/database/collection.bson.gz` (mongodump's native format)
+- **Index File**: `{database}_{collection}_indexes.json` (contains all index definitions)
+- **Default Output Directory**: `./dump-backup/`
+- **Native BSON Support**: Uses mongodump's optimized BSON format with built-in compression
+- **Default gzip compression**: Built-in mongodump compression (70-90% size reduction)
+- **MongoRestorer** automatically handles chunk directories and mongorestore integration
 
 ## Performance Optimizations
 
-### Memory-Agnostic Architecture (Any Size)
-- **True Streaming**: Manual cursor iteration with zero internal buffering
-- **Adaptive Range Splitting**: Automatically splits large months (>1M docs) into manageable chunks
-- **Constant Memory Usage**: ~50-150MB regardless of dataset size (MB to TB)
-- **One-Document Processing**: Each document processed individually and immediately written to disk
-- **Automatic Compression**: Enabled by default with 70-90% space savings
-- **Complete Index Preservation**: Automatic extraction and restoration of all indexes (NEW in 1.1.0)
+### Simplified Native Tool Architecture
+- **Native mongodump/mongorestore**: Leverages MongoDB's optimized native tools for maximum performance
+- **Monthly Date Filtering**: Uses MongoDB query optimization with date range filters
+- **Minimal Memory Usage**: mongodump handles memory management automatically 
+- **Built-in Compression**: Native gzip compression with 70-90% space savings
+- **Complete Index Preservation**: Automatic extraction and restoration of all indexes
 - **Non-Intrusive Operation**: Only reads data, never modifies collections or creates indexes
-- **Resume Capability**: State-based resumption works with range splitting
+- **Resume Capability**: State-based resumption tracks completed monthly chunks
+- **Chunk-based Architecture**: Each month stored as separate directory for easy management
 
 ## Known Limitations/TODOs
 
 1. **No Test Framework**: Package.json shows "no test specified" - only has basic validation in manage.sh
 
-2. **BSON Format**: Currently outputs JSON even when BSON format is specified (simplified implementation)
+2. **Requires mongodump/mongorestore**: Users must have MongoDB database tools installed locally
 
 ## Development Context
 
@@ -145,13 +149,15 @@ The `buildConnectionUri()` method handles both approaches and includes secure pa
 
 ### Recent Enhancements
 
-**Version 1.4.0 - Memory-Agnostic Architecture**
-- **True Streaming**: Replaced `cursor.forEach()` with manual `cursor.next()` iteration to eliminate buffering
-- **Adaptive Range Splitting**: Automatically splits large months (>1M docs) into smaller time-based chunks  
-- **Memory-Agnostic Processing**: Handles datasets of unlimited size with constant ~50-150MB memory usage
-- **Enhanced Error Handling**: Improved resilience for complex documents and extreme memory scenarios
-- **Range-Aware State Management**: Resume functionality works seamlessly with adaptive range splitting
-- **Performance Consistency**: Processing speed remains stable regardless of dataset size
+**Version 1.7.0 - Simplified Native Tool Architecture**
+- **Complete Rewrite**: Replaced complex 900+ line streaming implementation with 200-line mongodump wrapper
+- **Native Tool Integration**: Uses mongodump/mongorestore for optimal performance and reliability
+- **Required Date Field**: `--date-field` parameter is now required (no default) for explicit filtering
+- **Chunk-based Structure**: Monthly dumps stored as `./dump-backup/YYYY-MM/` directories
+- **Clear Progress Display**: Shows `[current/total]` progress for both dump and restore operations
+- **Selective Restore**: New `--months` option to restore specific monthly chunks
+- **Native BSON Support**: Real BSON format support via mongodump (removes previous JSON limitation)
+- **Simplified Codebase**: 80% reduction in code complexity while maintaining all key features
 
 **Version 1.3.0 - Backup Cleanup Feature**
 - **Safe Backup Deletion**: New `clean` command for removing already-backed-up months
