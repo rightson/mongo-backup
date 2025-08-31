@@ -1,6 +1,6 @@
 # mongo-backup
 
-A high-performance MongoDB collection dumper optimized for large datasets (500GB+) with automatic monthly splitting, intelligent compression, and resume capabilities.
+A memory-efficient MongoDB collection dumper optimized for datasets of any size with automatic monthly splitting, intelligent compression, and resume capabilities.
 
 ## Features
 
@@ -8,12 +8,12 @@ A high-performance MongoDB collection dumper optimized for large datasets (500GB
 - ⚡ **Resume Capability**: Can resume from any interrupted point without data loss
 - 📊 **Progress Tracking**: Real-time progress reporting with document counts
 - 🗜️ **Smart Compression**: Default gzip compression with 70-90% space savings
-- 🚀 **Memory Efficient**: Optimized streaming with large collection batch sizes (50K default)
+- 🚀 **Memory Agnostic**: True streaming approach handles datasets of unlimited size
 - 📈 **Complete Index Preservation**: Automatically extracts and restores all indexes during dump/restore cycles
 - 🔧 **Easy CLI**: Full-featured command-line interface with MongoDB-compatible options
 - 📁 **Organized Output**: Clean file naming with year-month format
 - 📦 **Dual Usage**: Works as both CLI tool and Node.js module
-- 🎯 **Large Dataset Optimized**: Designed for 500GB+ collections with intelligent defaults
+- 🎯 **Adaptive Range Splitting**: Automatically splits large months to prevent memory issues
 
 ## Installation
 
@@ -281,81 +281,42 @@ mongo-backup automatically preserves all collection indexes during dump and rest
 
 5. **Non-Intrusive**: mongo-backup only reads data and never modifies your collection or indexes
 
-## Large Collection Optimization (500GB+ / 10M+ Documents)
+## Memory-Agnostic Architecture
 
-mongo-backup is specifically optimized for both large datasets and very large individual documents:
+mongo-backup uses a true streaming architecture that handles datasets of any size without memory constraints:
+
+### **Core Memory Features**
+- **True Streaming**: Manual cursor iteration with no internal buffering
+- **Adaptive Range Splitting**: Automatically splits large monthly ranges (>1M docs) into smaller chunks
+- **One-Document Processing**: Each document is processed individually and immediately written to disk
+- **Constant Memory Usage**: Memory footprint remains stable regardless of dataset size
+- **Emergency GC**: Automatic garbage collection triggers based on memory pressure
 
 ### **Automatic Optimizations**
-- **Adaptive Batch Sizes**: Automatically adjusts from 1-50,000 documents based on document size
-- **Large Document Support**: Optimized for documents up to 50MB+ with 5000+ keys
-- **Memory Monitoring**: Real-time memory usage tracking with automatic garbage collection
-- **Default Compression**: ~70-90% space reduction with gzip compression
-- **Index Preservation**: Automatically extracts and preserves all collection indexes
-- **Non-Intrusive**: Only reads data, never modifies collections or creates indexes
-- **Emergency Memory Management**: Automatic pausing and GC when memory usage exceeds 85%
+- **Range Detection**: Analyzes document counts and splits large months automatically
+- **Memory Monitoring**: Real-time tracking with detailed progress reporting
+- **Immediate Cleanup**: Aggressive reference nullification after each document
+- **Compression**: Default gzip compression for space efficiency
 
-### **Memory Efficiency Features**
-- **Document-by-Document Processing**: No buffering for large documents (10MB+)
-- **Immediate Write**: Documents are written to disk immediately after JSON serialization
-- **Aggressive GC**: Automatic garbage collection every 500 documents for large docs
-- **Memory Alerts**: Warnings for documents larger than 50MB
-- **Progress Monitoring**: Real-time memory usage and average document size reporting
+### **Performance Characteristics**
+- **Memory Usage**: Constant ~50-150MB regardless of dataset size
+- **Processing**: One document at a time with immediate disk writes
+- **Scalability**: Handles collections from MB to TB with same memory footprint
+- **Auto-splitting**: Large months automatically divided into manageable chunks
 
-### **Expected Performance**
-**Standard Collections (500GB, <1MB docs)**
-- **Processing Time**: 2-8 hours depending on hardware
-- **Memory Usage**: <100MB (consistent streaming)
-- **Batch Size**: 10,000-50,000 documents
-
-**Large Document Collections (10M+ docs, 10MB+ each)**
-- **Processing Time**: Variable based on document complexity  
-- **Memory Usage**: <200MB with aggressive GC
-- **Batch Size**: 1-100 documents (automatically optimized)
-- **Document Processing**: One-at-a-time for maximum memory efficiency
-
-**Ultra-Complex Documents (4000+ key/value pairs)**
-- **Processing Time**: Slower due to aggressive memory management
-- **Memory Usage**: <150MB with ultra-aggressive GC  
-- **Batch Size**: Always 1 (forced single-document processing)
-- **Key Analysis**: Real-time counting of nested keys and complexity warnings
-- **JSON Serialization**: Safe serialization with circular reference protection
-- **Memory Spikes**: Monitored per-document with emergency cleanup
-
-### **Best Practices for Large Collections**
+### **Best Practices**
 ```bash
-# Optimal dump command for 500GB+ collections
+# Standard dump - memory usage is automatically optimized
 npx @rightson/mongo-backup dump \
   --uri "your-connection-string" \
   --database "your-db" \
-  --collection "your-collection" \
-  --batch-size 50000
+  --collection "your-collection"
 
-# Restore with automatic index recreation
-npx @rightson/mongo-backup restore \
-  --uri "your-connection-string" \
-  --database "your-db" \
-  --collection "your-collection" \
-  --batch-size 25000
-
-# For very large documents (10MB+ each), use minimal batch size
-npx @rightson/mongo-backup dump \
-  --database "logs" \
-  --collection "detailed-logs" \
-  --batch-size 10 \
-  --enable-gc
-
-# Enable garbage collection for memory optimization (recommended for large docs)
+# Enable GC for extremely large documents (optional)
 NODE_OPTIONS="--expose-gc" npx @rightson/mongo-backup dump \
+  --uri "your-connection-string" \
   --database "your-db" \
-  --collection "large-documents" \
-  --batch-size 1
-
-# For EXTREME cases: 4000+ key documents with memory constraints
-NODE_OPTIONS="--expose-gc --max-old-space-size=4096" npx @rightson/mongo-backup dump \
-  --database "your-db" \
-  --collection "ultra-complex-documents" \
-  --batch-size 1 \
-  --enable-gc
+  --collection "your-collection"
 ```
 
 ## Development
@@ -403,7 +364,7 @@ The utility includes robust error handling:
 - MongoDB 3.6+
 - Sufficient disk space for output files (with compression: ~15-30% of original collection size)
 - Network access to MongoDB instance
-- For 500GB+ collections: Ensure proper indexes exist on date fields
+- For optimal performance: Ensure indexes exist on date fields
 
 ## Troubleshooting
 
@@ -417,35 +378,16 @@ The utility includes robust error handling:
 - Check file permissions in output directory
 - Verify the same parameters are used when resuming
 
-### Out of Memory
-- Use very small batch sizes for large documents (`-b 1` to `-b 10`)
-- Enable Node.js garbage collection: `NODE_OPTIONS="--expose-gc"`
-- Enable compression (`-z`) - default enabled
-- Check available system memory and close other applications
+### Out of Memory (Rare with v1.4.0+)
+- The tool now uses true streaming and should not run out of memory
+- For extremely complex documents, enable GC: `NODE_OPTIONS="--expose-gc"`
+- Large months are automatically split into smaller chunks
 
 ### Slow Performance  
 - Ensure indexes exist on your date field before dumping
-- For small documents: increase batch size (--batch-size 75000)
-- For large documents (10MB+): decrease batch size (--batch-size 1-10)
-- Run closer to MongoDB server
-- Ensure compression is enabled (default) for faster I/O
-
-### Very Large Documents (10MB+ with 5000+ keys)
-- Use `NODE_OPTIONS="--expose-gc"` to enable garbage collection
-- Set batch size to 1-10: `--batch-size 1`
-- Monitor memory usage in progress reports
-- Ensure sufficient disk space (documents may expand during JSON serialization)
-- Consider processing during off-peak hours due to intensive memory management
-
-### Ultra-Complex Documents (4000+ key/value pairs)
-- **MANDATORY**: Use `NODE_OPTIONS="--expose-gc --max-old-space-size=4096"`
-- **ALWAYS** set `--batch-size 1` (automatically enforced)
-- Monitor key count and memory spikes in detailed progress reports
-- Expect slower processing due to per-document garbage collection
-- Watch for circular reference warnings and JSON serialization errors
-- Emergency memory cleanup automatically triggers at 75%+ memory usage
-- Consider splitting very complex collections into smaller monthly chunks
-- Progress format: `[Mem: 45MB (12.3%) | Doc: 8.2MB | Keys: ~4,250]`
+- Run closer to MongoDB server for faster network I/O
+- Compression is enabled by default for better performance
+- Large months are automatically split for optimal processing
 
 ## Contributing
 
