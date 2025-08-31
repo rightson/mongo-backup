@@ -54,6 +54,12 @@ npx @rightson/mongo-backup dump -d myDatabase -c myCollection
 # Basic restore (indexes automatically restored)
 npx @rightson/mongo-backup restore -d myDatabase -c myCollection
 
+# Restore all collections from dump directory
+npx @rightson/mongo-backup restore -d myDatabase --all-collections
+
+# Restore to different target database
+npx @rightson/mongo-backup restore -d sourceDB -c myCollection --target-database targetDB
+
 # Clean already-backed-up data (with safety validation)
 npx @rightson/mongo-backup clean -d myDatabase -c myCollection
 
@@ -99,11 +105,22 @@ const restorer = new MongoRestorer({
   database: 'myapp',
   collection: 'users',
   inputDir: './backup',
+  targetDatabase: 'staging',         // Optional: restore to different database
   batchSize: 25000,                  // Default: 25000
   skipIndexRestoration: false        // Default: false (indexes restored)
 });
 
 await restorer.run();
+
+// Restore all collections from dump directory
+const allCollectionsRestorer = new MongoRestorer({
+  uri: 'mongodb://localhost:27017',
+  database: 'myapp',
+  allCollections: true,
+  inputDir: './backup'
+});
+
+await allCollectionsRestorer.restoreAllCollections();
 ```
 
 ## CLI Options
@@ -114,7 +131,9 @@ await restorer.run();
 |--------|-------|-------------|---------|
 | `--uri` | `-u` | MongoDB connection URI | `mongodb://localhost:27017` |
 | `--database` | `-d` | Database name | `test` |
-| `--collection` | `-c` | Collection name | **Required** |
+| `--collection` | `-c` | Collection name | **Required** (unless `--all-collections`) |
+| `--all-collections` | | Restore all collections found in dump directory | `false` |
+| `--target-database` | | Target database name (if different from source) | Same as `--database` |
 | `--date-field` | `-f` | Date field for monthly splitting | `createdAt` |
 | `--output-dir` / `--input-dir` | `-o` / `-i` | Output/Input directory | `./dump-extra` |
 | `--batch-size` | `-b` | Documents per batch | `50000` (dump), `25000` (restore) |
@@ -143,6 +162,13 @@ npx @rightson/mongo-backup restore \
   --uri "mongodb+srv://user:pass@cluster.mongodb.net/" \
   --database "production" \
   --collection "transactions"
+
+# Restore all collections to a different database
+npx @rightson/mongo-backup restore \
+  --uri "mongodb+srv://user:pass@cluster.mongodb.net/" \
+  --database "production" \
+  --all-collections \
+  --target-database "staging"
 ```
 
 ### Custom Date Field and Output
@@ -165,6 +191,27 @@ npx @rightson/mongo-backup dump \
   --uri "mongodb://localhost:27017" \
   --database "ecommerce" \
   --collection "orders"
+```
+
+### Cross-Database Operations
+
+```bash
+# Restore from production to staging
+npx @rightson/mongo-backup restore \
+  -d "production" -c "users" \
+  --target-database "staging"
+
+# Restore all collections from prod to test
+npx @rightson/mongo-backup restore \
+  -d "production" \
+  --all-collections \
+  --target-database "test"
+
+# Restore specific months to different database
+npx @rightson/mongo-backup restore \
+  -d "logs" -c "events" \
+  --target-database "logs_archive" \
+  --months "2023-01,2023-02,2023-03"
 ```
 
 ### Batch Size Tuning
