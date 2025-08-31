@@ -123,7 +123,7 @@ show_examples() {
     echo ""
 
     echo "3️⃣  MongoDB Atlas:"
-    echo "   npx @rightson/mongo-backup --uri 'mongodb+srv://user:pass@cluster.mongodb.net/production' -c orders"
+    echo "   npx @rightson/mongo-backup --uri 'mongodb+srv://$user:$pass@cluster.mongodb.net/production' -c orders"
     echo ""
 
     echo "4️⃣  Custom date field and compression:"
@@ -185,7 +185,7 @@ create_sample_script() {
 
 # MongoDB Configuration
 MONGODB_URI="mongodb://localhost:27017"  # Or use MongoDB Atlas URI
-# MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/"
+# MONGODB_URI="mongodb+srv://$user:$pass@cluster.mongodb.net/"
 
 # Database Configuration
 DATABASE="myapp"
