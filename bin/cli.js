@@ -135,6 +135,49 @@ program
         }
     });
 
+// List command
+program
+    .command('list')
+    .description('List collections in database with document counts')
+    .option('-u, --uri <uri>', 'MongoDB connection URI', 'mongodb://localhost:27017')
+    .option('-h, --host <host>', 'MongoDB host', 'localhost')
+    .option('-p, --port <port>', 'MongoDB port', '27017')
+    .option('--username <username>', 'MongoDB username')
+    .option('--password <password>', 'MongoDB password')
+    .option('--authentication-database <db>', 'Authentication database')
+    .option('-d, --database <name>', 'Database name', 'test')
+    .action(async (options) => {
+        // Parse numeric options
+        const parsedOptions = {
+            ...options,
+            port: parseInt(options.port)
+        };
+
+        const dumper = new MongoDumper(parsedOptions);
+
+        try {
+            const collections = await dumper.listCollections();
+            
+            console.log(`\nCollections in database '${options.database}':`);
+            console.log('─'.repeat(50));
+            
+            collections.forEach(coll => {
+                const countStr = typeof coll.count === 'number' ? 
+                    coll.count.toLocaleString() : 
+                    coll.count;
+                console.log(`${coll.name.padEnd(30)} ${countStr} documents`);
+            });
+            
+            console.log('─'.repeat(50));
+            console.log(`Total: ${collections.length} collections\n`);
+            
+            process.exit(0);
+        } catch (error) {
+            console.error('\n✗ List failed:', error.message);
+            process.exit(1);
+        }
+    });
+
 // Restore command
 program
     .command('restore')
