@@ -54,6 +54,9 @@ npx @rightson/mongo-backup dump -d myDatabase -c myCollection
 # Basic restore (indexes automatically restored)
 npx @rightson/mongo-backup restore -d myDatabase -c myCollection
 
+# Clean already-backed-up data (with safety validation)
+npx @rightson/mongo-backup clean -d myDatabase -c myCollection
+
 # With MongoDB connection options (compression enabled by default)
 npx @rightson/mongo-backup dump \
   --uri "mongodb://localhost:27017" \
@@ -120,7 +123,7 @@ await restorer.run();
 
 ## Examples
 
-### Complete Dump and Restore
+### Complete Dump, Clean, and Restore
 
 ```bash
 # Dump collection with automatic index preservation
@@ -128,6 +131,12 @@ npx @rightson/mongo-backup dump \
   --uri "mongodb+srv://user:pass@cluster.mongodb.net/" \
   --database "production" \
   --collection "transactions"
+
+# Clean specific backed-up months (with validation)
+npx @rightson/mongo-backup clean \
+  --database "production" \
+  --collection "transactions" \
+  --months "2023-01,2023-02,2023-03"
 
 # Restore collection with automatic index restoration
 npx @rightson/mongo-backup restore \
@@ -181,6 +190,45 @@ The utility automatically tracks progress in a `.dump-state.json` file. If inter
 3. Already completed months are skipped
 4. Progress is maintained across restarts
 
+## Cleanup Functionality
+
+The `clean` command allows you to safely delete already-backed-up months with built-in validation:
+
+```bash
+# Dry run to see what would be deleted (recommended first step)
+npx @rightson/mongo-backup clean \
+  --database "mydb" \
+  --collection "mycoll" \
+  --dry-run
+
+# Delete all completed backups with confirmation
+npx @rightson/mongo-backup clean \
+  --database "mydb" \
+  --collection "mycoll"
+
+# Delete specific months without confirmation  
+npx @rightson/mongo-backup clean \
+  --database "mydb" \
+  --collection "mycoll" \
+  --months "2023-01,2023-02" \
+  --no-confirm
+
+# Clean with custom output directory
+npx @rightson/mongo-backup clean \
+  --database "mydb" \
+  --collection "mycoll" \
+  --output-dir "./custom-backup-dir"
+```
+
+### Safety Features
+- **Validation**: Only deletes files marked as completed in state file
+- **File Integrity Check**: Verifies backup files exist and are not empty before deletion
+- **Confirmation Prompt**: Interactive confirmation before deletion (can be disabled)
+- **Dry Run Mode**: Preview what would be deleted without actually deleting
+- **Selective Deletion**: Target specific months or all completed backups
+- **State Management**: Automatically updates state file after successful deletion
+- **Error Prevention**: Skips files that don't exist or are already removed
+
 ## Output Structure
 
 ```
@@ -233,22 +281,45 @@ mongo-backup automatically preserves all collection indexes during dump and rest
 
 5. **Non-Intrusive**: mongo-backup only reads data and never modifies your collection or indexes
 
-## Large Collection Optimization (500GB+)
+## Large Collection Optimization (500GB+ / 10M+ Documents)
 
-mongo-backup is specifically optimized for large datasets with intelligent defaults:
+mongo-backup is specifically optimized for both large datasets and very large individual documents:
 
 ### **Automatic Optimizations**
-- **Smart Batch Sizes**: 50,000 documents per batch for dumps, 25,000 for restores
+- **Adaptive Batch Sizes**: Automatically adjusts from 1-50,000 documents based on document size
+- **Large Document Support**: Optimized for documents up to 50MB+ with 5000+ keys
+- **Memory Monitoring**: Real-time memory usage tracking with automatic garbage collection
 - **Default Compression**: ~70-90% space reduction with gzip compression
 - **Index Preservation**: Automatically extracts and preserves all collection indexes
 - **Non-Intrusive**: Only reads data, never modifies collections or creates indexes
-- **Memory Efficient**: Streaming architecture prevents memory overflow
+- **Emergency Memory Management**: Automatic pausing and GC when memory usage exceeds 85%
 
-### **Expected Performance** (500GB collection)
-- **Processing Time**: 2-8 hours depending on document complexity and hardware
-- **Disk Usage**: ~50-150GB with compression (vs 500GB uncompressed)
+### **Memory Efficiency Features**
+- **Document-by-Document Processing**: No buffering for large documents (10MB+)
+- **Immediate Write**: Documents are written to disk immediately after JSON serialization
+- **Aggressive GC**: Automatic garbage collection every 500 documents for large docs
+- **Memory Alerts**: Warnings for documents larger than 50MB
+- **Progress Monitoring**: Real-time memory usage and average document size reporting
+
+### **Expected Performance**
+**Standard Collections (500GB, <1MB docs)**
+- **Processing Time**: 2-8 hours depending on hardware
 - **Memory Usage**: <100MB (consistent streaming)
-- **Network Efficiency**: Optimized batch sizes reduce connection overhead
+- **Batch Size**: 10,000-50,000 documents
+
+**Large Document Collections (10M+ docs, 10MB+ each)**
+- **Processing Time**: Variable based on document complexity  
+- **Memory Usage**: <200MB with aggressive GC
+- **Batch Size**: 1-100 documents (automatically optimized)
+- **Document Processing**: One-at-a-time for maximum memory efficiency
+
+**Ultra-Complex Documents (4000+ key/value pairs)**
+- **Processing Time**: Slower due to aggressive memory management
+- **Memory Usage**: <150MB with ultra-aggressive GC  
+- **Batch Size**: Always 1 (forced single-document processing)
+- **Key Analysis**: Real-time counting of nested keys and complexity warnings
+- **JSON Serialization**: Safe serialization with circular reference protection
+- **Memory Spikes**: Monitored per-document with emergency cleanup
 
 ### **Best Practices for Large Collections**
 ```bash
@@ -266,11 +337,25 @@ npx @rightson/mongo-backup restore \
   --collection "your-collection" \
   --batch-size 25000
 
-# For very large documents, reduce batch size
+# For very large documents (10MB+ each), use minimal batch size
 npx @rightson/mongo-backup dump \
   --database "logs" \
   --collection "detailed-logs" \
-  --batch-size 10000
+  --batch-size 10 \
+  --enable-gc
+
+# Enable garbage collection for memory optimization (recommended for large docs)
+NODE_OPTIONS="--expose-gc" npx @rightson/mongo-backup dump \
+  --database "your-db" \
+  --collection "large-documents" \
+  --batch-size 1
+
+# For EXTREME cases: 4000+ key documents with memory constraints
+NODE_OPTIONS="--expose-gc --max-old-space-size=4096" npx @rightson/mongo-backup dump \
+  --database "your-db" \
+  --collection "ultra-complex-documents" \
+  --batch-size 1 \
+  --enable-gc
 ```
 
 ## Development
@@ -333,15 +418,34 @@ The utility includes robust error handling:
 - Verify the same parameters are used when resuming
 
 ### Out of Memory
-- Reduce batch size (`-b 1000`)
-- Enable compression (`-z`)
-- Check available system memory
+- Use very small batch sizes for large documents (`-b 1` to `-b 10`)
+- Enable Node.js garbage collection: `NODE_OPTIONS="--expose-gc"`
+- Enable compression (`-z`) - default enabled
+- Check available system memory and close other applications
 
-### Slow Performance
+### Slow Performance  
 - Ensure indexes exist on your date field before dumping
-- Increase batch size for small documents (--batch-size 75000)
+- For small documents: increase batch size (--batch-size 75000)
+- For large documents (10MB+): decrease batch size (--batch-size 1-10)
 - Run closer to MongoDB server
 - Ensure compression is enabled (default) for faster I/O
+
+### Very Large Documents (10MB+ with 5000+ keys)
+- Use `NODE_OPTIONS="--expose-gc"` to enable garbage collection
+- Set batch size to 1-10: `--batch-size 1`
+- Monitor memory usage in progress reports
+- Ensure sufficient disk space (documents may expand during JSON serialization)
+- Consider processing during off-peak hours due to intensive memory management
+
+### Ultra-Complex Documents (4000+ key/value pairs)
+- **MANDATORY**: Use `NODE_OPTIONS="--expose-gc --max-old-space-size=4096"`
+- **ALWAYS** set `--batch-size 1` (automatically enforced)
+- Monitor key count and memory spikes in detailed progress reports
+- Expect slower processing due to per-document garbage collection
+- Watch for circular reference warnings and JSON serialization errors
+- Emergency memory cleanup automatically triggers at 75%+ memory usage
+- Consider splitting very complex collections into smaller monthly chunks
+- Progress format: `[Mem: 45MB (12.3%) | Doc: 8.2MB | Keys: ~4,250]`
 
 ## Contributing
 

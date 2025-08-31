@@ -18,6 +18,7 @@ mongo-backup is a Node.js CLI tool for MongoDB collection dumping with automatic
 - **Date Analysis**: `getDateRange()`, `generateMonthlyRanges()` - analyzes collection date spans and creates monthly time ranges
 - **State Management**: `loadState()`, `saveState()` - persistent resume functionality via `.dump-state.json`
 - **Streaming Dump**: `dumpMonth()` - core export logic with streaming, compression, progress tracking
+- **Backup Cleanup**: `cleanBackedUpData()`, `validateBackupFile()`, `findBackupFiles()` - safe deletion of completed backups with validation (NEW in 1.3.0)
 - **Orchestration**: `run()` - main method coordinating the entire dump process
 
 **MongoRestorer Class** (`lib/mongo-restorer.js`):
@@ -35,6 +36,7 @@ mongo-backup is a Node.js CLI tool for MongoDB collection dumping with automatic
 - Handles CLI-specific concerns (exit codes, error formatting)
 - **Full Connection Support**: Supports both `--uri` and individual connection options (`-h`, `-p`, `--host`, `--username`, etc.)
 - **Index Preservation Options**: `--skip-index-extraction`, `--skip-index-restoration` for manual index control (NEW in 1.1.0)
+- **Backup Cleanup**: `clean` command for safely deleting already-backed-up months with validation (NEW in 1.3.0)
 - **Non-Intrusive Design**: Tool only reads data and never modifies collections, indexes, or schema
 - **Optimized Defaults**: Large collection optimized batch sizes and compression enabled by default
 
@@ -139,6 +141,15 @@ The `buildConnectionUri()` method handles both approaches and includes secure pa
 - **Dual Architecture**: MongoDumper and MongoRestorer classes contain all business logic
 
 ### Recent Enhancements
+
+**Version 1.3.0 - Backup Cleanup Feature**
+- **Safe Backup Deletion**: New `clean` command for removing already-backed-up months
+- **Validation Before Deletion**: Ensures backup files are complete and exist before deletion
+- **State File Integration**: Cross-references with `.dump-state.json` to verify completion status
+- **Selective Cleanup**: Target specific months or clean all completed backups
+- **Safety Features**: Dry-run mode, confirmation prompts, integrity validation
+- **Error Prevention**: Avoids attempting to delete non-existent or already-removed files
+- **Automatic State Updates**: Updates state file after successful deletions
 
 **Version 1.1.0 - Complete Index Preservation**
 - **Automatic Index Extraction**: All collection indexes automatically saved during dumps

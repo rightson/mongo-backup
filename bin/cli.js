@@ -24,11 +24,12 @@ program
     .option('-c, --collection <name>', 'Collection name')
     .option('-f, --date-field <field>', 'Date field for splitting', 'createdAt')
     .option('-o, --output-dir <dir>', 'Output directory', './dump-extra')
-    .option('-b, --batch-size <size>', 'Batch size for querying', '50000')
+    .option('-b, --batch-size <size>', 'Batch size for querying (capped at 10K for 10M+ documents)', '50000')
     .option('-z, --compress', 'Compress output files with gzip (default: true)')
     .option('--no-compress', 'Disable compression')
     .option('--format <format>', 'Output format (json|bson)', 'json')
     .option('--skip-index-extraction', 'Skip automatic index extraction and saving (default: false)')
+    .option('--enable-gc', 'Enable aggressive garbage collection for large datasets')
     .action(async (options) => {
         if (!options.collection) {
             console.error('Error: Collection name is required');
@@ -44,6 +45,25 @@ program
             skipIndexExtraction: options.skipIndexExtraction || false
         };
 
+        // Ultra-conservative settings for complex documents (4000+ keys)
+        if (parsedOptions.batchSize <= 10) {
+            console.log('🔧 Detected ultra-small batch size - enabling aggressive memory optimizations');
+            
+            // Set Node.js memory optimization flags if not already set
+            if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes('--expose-gc')) {
+                console.log('⚠️  For optimal memory management with complex documents, restart with:');
+                console.log('   NODE_OPTIONS="--expose-gc --max-old-space-size=4096" npx @rightson/mongo-backup dump ...');
+                console.log('');
+            }
+            
+            // Force enable GC if available
+            if (global.gc) {
+                console.log('✓ Garbage collection enabled');
+            } else if (options.enableGc) {
+                console.log('⚠️  GC not available. Use NODE_OPTIONS="--expose-gc" to enable');
+            }
+        }
+
         const dumper = new MongoDumper(parsedOptions);
 
         try {
@@ -52,6 +72,63 @@ program
             process.exit(0);
         } catch (error) {
             console.error('\n✗ Dump failed:', error.message);
+            process.exit(1);
+        }
+    });
+
+// Clean command
+program
+    .command('clean')
+    .description('Delete already-backed-up months after validation')
+    .option('-d, --database <name>', 'Database name', 'test')
+    .option('-c, --collection <name>', 'Collection name')
+    .option('-o, --output-dir <dir>', 'Output directory containing backup files', './dump-extra')
+    .option('-m, --months <months>', 'Specific months to delete (comma-separated, e.g., "2023-01,2023-02")')
+    .option('--dry-run', 'Show what would be deleted without actually deleting')
+    .option('--no-confirm', 'Skip confirmation prompt (use with caution)')
+    .option('-z, --compress', 'Assume compressed files (.gz)')
+    .option('--no-compress', 'Assume uncompressed files')
+    .option('--format <format>', 'Backup file format (json|bson)', 'json')
+    .action(async (options) => {
+        if (!options.collection) {
+            console.error('Error: Collection name is required');
+            process.exit(1);
+        }
+
+        // Parse months if provided
+        const months = options.months ? options.months.split(',').map(m => m.trim()) : null;
+
+        // Parse options
+        const parsedOptions = {
+            ...options,
+            compress: options.noCompress ? false : (options.compress !== undefined ? options.compress : true),
+            confirmDelete: options.confirm !== false // Default to true unless --no-confirm
+        };
+
+        const dumper = new MongoDumper(parsedOptions);
+
+        try {
+            const result = await dumper.cleanBackedUpData({
+                months,
+                confirmDelete: parsedOptions.confirmDelete,
+                dryRun: options.dryRun
+            });
+
+            if (options.dryRun) {
+                console.log(`\n✓ Dry run completed: ${result.dryRun?.length || 0} files would be deleted`);
+            } else if (result.cancelled) {
+                console.log('\n✓ Clean operation cancelled');
+            } else {
+                console.log(`\n✓ Clean completed: ${result.deleted.length} files deleted`);
+                if (result.errors.length > 0) {
+                    console.log(`   ${result.errors.length} errors occurred`);
+                    process.exit(1);
+                }
+            }
+            
+            process.exit(0);
+        } catch (error) {
+            console.error('\n✗ Clean failed:', error.message);
             process.exit(1);
         }
     });
