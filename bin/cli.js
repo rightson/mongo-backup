@@ -13,7 +13,7 @@ program
 // Dump command
 program
     .command('dump')
-    .description('Dump MongoDB collection with monthly splitting')
+    .description('Dump MongoDB collection(s) with monthly splitting')
     .option('-u, --uri <uri>', 'MongoDB connection URI', 'mongodb://localhost:27017')
     .option('-h, --host <host>', 'MongoDB host', 'localhost')
     .option('-p, --port <port>', 'MongoDB port', '27017')
@@ -21,7 +21,7 @@ program
     .option('--password <password>', 'MongoDB password')
     .option('--authentication-database <db>', 'Authentication database')
     .option('-d, --database <name>', 'Database name', 'test')
-    .option('-c, --collection <name>', 'Collection name')
+    .option('-c, --collection <name>', 'Collection name (if not specified, dumps all non-empty collections)')
     .requiredOption('-f, --date-field <field>', 'Date field for splitting (required)')
     .option('-o, --output-dir <dir>', 'Output directory', './dump-backup')
     .option('-b, --batch-size <size>', 'Batch size for querying (capped at 10K for 10M+ documents)', '50000')
@@ -32,10 +32,6 @@ program
     .option('--enable-gc', 'Enable aggressive garbage collection for large datasets')
     .option('--debug-listeners', 'Enable debug logging for event listener counts')
     .action(async (options) => {
-        if (!options.collection) {
-            console.error('Error: Collection name is required');
-            process.exit(1);
-        }
 
         // Parse numeric options and handle compression default
         const parsedOptions = {
@@ -69,8 +65,15 @@ program
         const dumper = new MongoDumper(parsedOptions);
 
         try {
-            await dumper.run();
-            console.log('\n✓ Dump completed!');
+            if (options.collection) {
+                // Dump single collection
+                await dumper.run();
+                console.log('\n✓ Dump completed!');
+            } else {
+                // Dump all non-empty collections
+                await dumper.dumpAllCollections();
+                console.log('\n✓ All collections dump completed!');
+            }
             process.exit(0);
         } catch (error) {
             console.error('\n✗ Dump failed:', error.message);
@@ -131,6 +134,49 @@ program
             process.exit(0);
         } catch (error) {
             console.error('\n✗ Clean failed:', error.message);
+            process.exit(1);
+        }
+    });
+
+// List command
+program
+    .command('list')
+    .description('List collections in database with document counts')
+    .option('-u, --uri <uri>', 'MongoDB connection URI', 'mongodb://localhost:27017')
+    .option('-h, --host <host>', 'MongoDB host', 'localhost')
+    .option('-p, --port <port>', 'MongoDB port', '27017')
+    .option('--username <username>', 'MongoDB username')
+    .option('--password <password>', 'MongoDB password')
+    .option('--authentication-database <db>', 'Authentication database')
+    .option('-d, --database <name>', 'Database name', 'test')
+    .action(async (options) => {
+        // Parse numeric options
+        const parsedOptions = {
+            ...options,
+            port: parseInt(options.port)
+        };
+
+        const dumper = new MongoDumper(parsedOptions);
+
+        try {
+            const collections = await dumper.listCollections();
+            
+            console.log(`\nCollections in database '${options.database}':`);
+            console.log('─'.repeat(50));
+            
+            collections.forEach(coll => {
+                const countStr = typeof coll.count === 'number' ? 
+                    coll.count.toLocaleString() : 
+                    coll.count;
+                console.log(`${coll.name.padEnd(30)} ${countStr} documents`);
+            });
+            
+            console.log('─'.repeat(50));
+            console.log(`Total: ${collections.length} collections\n`);
+            
+            process.exit(0);
+        } catch (error) {
+            console.error('\n✗ List failed:', error.message);
             process.exit(1);
         }
     });
