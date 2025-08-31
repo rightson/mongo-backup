@@ -1,0 +1,39 @@
+{
+  "name": "@rightson/mongo-backup",
+  "version": "1.0.0",
+  "description": "MongoDB collection dumper and restorer with monthly splitting and resume capability",
+  "main": "index.js",
+  "bin": {
+    "mongo-backup": "bin/cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node bin/cli.js"
+  },
+  "dependencies": {
+    "commander": "^11.1.0",
+    "mongodb": "^6.19.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": [
+    "mongodb",
+    "dump",
+    "restore",
+    "backup",
+    "monthly",
+    "split",
+    "resume"
+  ],
+  "author": "rightson",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rightson/mongo-backup.git"
+  },
+  "homepage": "https://github.com/rightson/mongo-backup",
+  "bugs": {
+    "url": "https://github.com/rightson/mongo-backup/issues"
+  }
+}
