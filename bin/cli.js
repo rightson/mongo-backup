@@ -193,13 +193,21 @@ program
     .option('--authentication-database <db>', 'Authentication database')
     .option('-d, --database <name>', 'Database name', 'test')
     .option('-c, --collection <name>', 'Collection name')
+    .option('--all-collections', 'Restore all collections found in dump directory')
+    .option('--target-database <name>', 'Target database name (if different from source)')
     .option('-i, --input-dir <dir>', 'Input directory containing dump chunks', './dump-backup')
     .option('-m, --months <months>', 'Specific months to restore (comma-separated, e.g., "2024-01,2024-03")')
     .option('--drop', 'Drop collection before restore')
     .option('--skip-index-restoration', 'Skip automatic index restoration (default: false)')
     .action(async (options) => {
-        if (!options.collection) {
-            console.error('Error: Collection name is required');
+        // Validate mutually exclusive options
+        if (options.allCollections && options.collection) {
+            console.error('Error: Cannot specify both --collection and --all-collections');
+            process.exit(1);
+        }
+        
+        if (!options.collection && !options.allCollections) {
+            console.error('Error: Must specify either --collection or --all-collections');
             process.exit(1);
         }
 
@@ -210,13 +218,18 @@ program
         const parsedOptions = {
             ...options,
             port: parseInt(options.port),
-            skipIndexRestoration: options.skipIndexRestoration || false
+            skipIndexRestoration: options.skipIndexRestoration || false,
+            targetDatabase: options.targetDatabase,
+            allCollections: options.allCollections || false
         };
 
         const restorer = new MongoRestorer(parsedOptions);
 
         try {
-            if (months) {
+            if (options.allCollections) {
+                await restorer.restoreAllCollections(months);
+                console.log('\n✓ All collections restore completed!');
+            } else if (months) {
                 await restorer.restoreSpecificChunks(months);
                 console.log(`\n✓ Selective restore completed for months: ${months.join(', ')}!`);
             } else {
