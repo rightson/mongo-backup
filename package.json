@@ -1,6 +1,6 @@
 {
   "name": "@rightson/mongo-backup",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "MongoDB collection dumper and restorer with monthly splitting and resume capability",
   "main": "index.js",
   "bin": {
