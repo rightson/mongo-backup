@@ -30,6 +30,7 @@ program
     .option('--format <format>', 'Output format (json|bson)', 'json')
     .option('--skip-index-extraction', 'Skip automatic index extraction and saving (default: false)')
     .option('--enable-gc', 'Enable aggressive garbage collection for large datasets')
+    .option('--debug-listeners', 'Enable debug logging for event listener counts')
     .action(async (options) => {
         if (!options.collection) {
             console.error('Error: Collection name is required');
@@ -42,7 +43,8 @@ program
             batchSize: parseInt(options.batchSize),
             port: parseInt(options.port),
             compress: options.noCompress ? false : (options.compress !== undefined ? options.compress : true),
-            skipIndexExtraction: options.skipIndexExtraction || false
+            skipIndexExtraction: options.skipIndexExtraction || false,
+            debugListeners: options.debugListeners || false
         };
 
         // Ultra-conservative settings for complex documents (4000+ keys)
